@@ -216,19 +216,19 @@ class MNIST:
         self.c_sup_test = self.c_sup_test.astype('float32')
 
         # Indexes to sample, want to use same samples multiple times
-        ids = np.random.choice(self.N_train - 1,(self.N_sup,self.M_sup), replace = True)
-        ids_test = np.random.choice(self.N_test - 1,(N_sup_test,self.M_sup), replace = True)
+        ids = np.array([np.random.choice(self.N_train, self.N_sup, replace = False)] * self.M_sup)
+        ids_test = np.array([np.random.choice(self.N_test, N_sup_test, replace = False)] * self.M_sup)
 
         # Create datasets
         for i in range(self.N_sup):
             for j,m in enumerate(Ms):
-                self.y_sup_train[i,j,:,:] = np.multiply(self.c_sup[i,j], self.x_train[ids[i,j], m, :, :])
-                self.x_sup_train[i,0,:,:] += np.multiply(self.c_sup[i,j], self.x_train[ids[i,j],m,:,:]) 
+                self.y_sup_train[i,j,:,:] = np.multiply(self.c_sup[i,j], self.x_train[ids[j,i], m, :, :])
+                self.x_sup_train[i,0,:,:] += np.multiply(self.c_sup[i,j], self.x_train[ids[j,i],m,:,:]) 
 
         for i in range(self.N_sup_test):
             for j,m in enumerate(Ms):
-                self.y_sup_test[i,j,:,:] = np.multiply(self.c_sup_test[i,j], self.x_test[ids_test[i,j], m, :, :])
-                self.x_sup_test[i,0,:,:] += np.multiply(self.c_sup_test[i,j], self.x_test[ids_test[i,j],m,:,:])
+                self.y_sup_test[i,j,:,:] = np.multiply(self.c_sup_test[i,j], self.x_test[ids_test[j,i], m, :, :])
+                self.x_sup_test[i,0,:,:] += np.multiply(self.c_sup_test[i,j], self.x_test[ids_test[j,i],m,:,:])
         if pytorch:
             data = torch.utils.data.TensorDataset(torch.Tensor(self.x_sup_train), torch.Tensor(self.y_sup_train))
             self.sup_loader = torch.utils.data.DataLoader(dataset = data, batch_size = self.batch_size, shuffle = True, drop_last = True)
