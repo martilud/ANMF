@@ -25,6 +25,7 @@ class NMF:
         - Remove everything that is not squared 
         - Write proper docstrings
         - Write proper convergence
+        - Make class_ids part of the object, not local to each function
         
         input:
             d: int, amount of basis vectors in W
@@ -51,7 +52,7 @@ class NMF:
         # Copy W if it is given
         self.W = W
 
-        # Initialize H_r and H_z
+        # Initialize H_r, H_z and H_sup
         self.H_r = None
         self.H_z = None
         self.H_sup = None
@@ -65,16 +66,22 @@ class NMF:
         # Number of sources
         self.S = None
 
-    def std_W_update(self,U_r,W,H_r):
+        # Calculate what parts of W and H_sup correspond
+        # to what class in relevant cases
+        if self.ds is not None:
+            self.class_ids = []
+            for i in range(len(self.ds)):
+                self.class_ids.append(np.arange(sum(self.ds[:i]), sum(self.ds[:i+1])))
+
+    def std_W_update(self,U_r,W,H_r, H_rH_rT = None):
         """
         Update rule for W for standard NMF and discriminative NMF
         """
-        H_rH_rT = np.dot(H_r, H_r.T)
+        if H_rH_rT is None:
+            H_rH_rT = np.dot(H_r, H_r.T)
         invN_r = 1.0/U_r.shape[1]
-        W_update = np.dot(U_r, H_r.T) * invN_r / (np.dot(W, H_rH_rT) * invN_r + self.mu_W)
-        #W_update = np.dot(U_r, H_r.T) / (np.dot(W, H_rH_rT) + self.mu_W)
-        #W_update = np.dot(U_r, H_r.T) / (np.dot(WH_r, H_r.T) + self.mu_W)
-        return W_update
+
+        return np.dot(U_r, H_r.T) * invN_r / (np.dot(W, H_rH_rT) * invN_r + self.mu_W)
 
     def adv_W_update(self, U_r, U_z, W, H_r, H_z, U_rH_rT = None, U_zH_zT = None, H_rH_rT = None, H_zH_zT = None):
         """
@@ -91,8 +98,34 @@ class NMF:
 
         invN_r = 1.0/U_r.shape[1]
         invN_z = 1.0/U_z.shape[1]
-        W_update = (np.dot(W,H_zH_zT) * invN_z + U_rH_rT * invN_r)/(np.dot(W, H_rH_rT)*invN_r + U_zH_zT * invN_z + self.mu_W)
-        return W_update
+
+        return (np.dot(W,H_zH_zT) * invN_z + U_rH_rT * invN_r)/(np.dot(W, H_rH_rT)*invN_r + U_zH_zT * invN_z + self.mu_W)
+
+    def std_W_semi_update(self,V,W,H, HH_rT = None):
+        """
+        Update rule for W for standard NMF in semi-supervised data setting 
+        """
+        invN_v = 1.0/V.shape[1]
+        if HH_rT is None:
+            HH_rT = np.dot(H, H[self.class_ids[-1],:].T)
+        return np.dot(V,H[self.class_ids[-1],:].T) * invN_v/(np.dot(W, HH_rT) * invN_v + self.mu_W)
+
+    def adv_W_semi_update(self,V,U_z, W, H, H_z, VH_rT = None, U_zH_zT = None, HH_rT = None, HH_zT = None):
+        """
+        Update rule for W for standard NMF in semi-supervised data setting 
+        """
+        invN_v = 1.0/V.shape[1]
+        invN_z = 1.0/U_z.shape[1]
+        if VH_rT is None:
+            VH_rT = np.dot(V, H[self.class_ids[-1],:].T)
+        if U_zH_zT is None:
+            U_zH_zT = np.dot(U_z, H_z.T)
+        if HH_rT is None:
+            HH_rT = np.dot(H, H[self.class_ids[-1],:].T)
+        if HH_zT is None:
+            HH_zT = np.dot(H_z, H_z.T)
+
+        return (np.dot(V,H[self.class_ids[-1],:].T) * invN_v + np.dot(W[:,self.class_ids[-1]],HH_zT) * invN_z)/(np.dot(W, HH_rT) * invN_v + U_zH_zT * invN_z + self.mu_W)
 
     def H_update(self,U,W,H, WtU = None, WtW = None):
         """
@@ -102,8 +135,21 @@ class NMF:
             WtU = np.dot(W.T, U)
         if WtW is None:
             WtW = np.dot(W.T, W)
-        H_update = WtU/(np.dot(WtW, H) + self.mu_H)
-        return H_update
+
+        #return WtU/(np.dot(WtW, H) + self.mu_H)
+
+        invN = 1.0/U.shape[1]
+
+        return (WtU * invN)/(np.dot(WtW, H) * invN + self.mu_H)
+
+    def H_semi_update(self,V,W,H,source,WitW = None):
+        
+        if WitW is None:
+            WitW = np.dot(W[:,self.class_ids[source]].T, W)
+        
+        invN_V = 1.0/V.shape[1]
+
+        return (np.dot(W[:,self.class_ids[source]].T, V) * invN_V)/(np.dot(WitW, H) * invN_V + self.mu_H)
 
 
     def initializeWH(self, U_r = None, U_z = None, U_sup = None, V_sup = None, prob = "std"):
@@ -161,6 +207,61 @@ class NMF:
                     WtW = np.dot(self.W[:,class_ids[j]].T, self.W[:,class_ids[j]])
                     self.H_r[class_ids[j],:] = self.transform(U_r[j], WtW = WtW, WtU = np.dot(self.W[:,class_ids[j]].T, U_r[j])) 
                     self.H_z[class_ids[j],:] = self.transform(U_z[j], WtW = WtW, WtU = np.dot(self.W[:,class_ids[j]].T, U_z[j])) 
+            if prob == "sup" or prob == "full":
+                self.H_sup = self.transform(V_sup)
+    
+    def initW(self,U_r = None, U_z = None, U_sup = None, V_sup = None, prob = "std"):
+        """
+        WRITE ME
+        """
+        if self.W is None:
+            if self.init == "rand":
+                self.W = np.random.uniform(0,1,(self.M,self.d))
+            elif self.init == "exem":
+                if prob == "std" or prob == "adv" or prob == "exem":
+                    self.W = U_r[:,np.random.choice(self.N_r, size = self.d, replace = False)]
+                else:
+                    self.W = np.zeros((self.M,self.d))
+                    for j in range(len(self.ds)):
+                        if U_r is not None:
+                            self.W[:,self.class_ids[j]] = U_r[j][:,np.random.choice(self.N_r, size = self.ds[j], replace = False)]
+                        else:
+                            self.W[:,self.class_ids[j]] = U_sup[j][:,np.random.choice(self.N_sup, size = self.ds[j], replace = False)]
+
+        if self.normalize == True:
+            norms = np.linalg.norm(self.W, axis = 0)
+            self.W = self.W/norms
+    
+    def initH(self,U_r = None, U_z = None, V = None, U_sup = None, V_sup = None, prob = "std"):
+        """
+        WRITE ME 
+        """
+
+        if self.init == "rand":
+            if prob != "sup":
+                self.H_r = np.random.uniform(0,1,(self.d,self.N_r))
+                if prob == "adv" or prob == "full" or prob == "semi_adv":
+                    self.H_z = np.random.uniform(0,1,(self.d,self.N_z))
+            if prob == "sup" or prob == "full":
+                self.H_sup = np.random.uniform(0,1,(self.d,self.N_sup))
+
+        elif self.init == "exem":
+            assert self.W is not None, "Exemplar based initialization requires W not None"
+            if prob == "std" or prob == "adv" or prob == "exem":
+                self.H_r = self.transform(U_r)
+                if prob == "adv":
+                    self.H_z = self.transform(U_z)
+            elif prob == "full":
+                self.H_r = np.zeros((self.d, self.N_r))
+                self.H_z = np.zeros((self.d, self.N_z))
+                for j in range(len(self.ds)):
+                    WtW = np.dot(self.W[:,self.class_ids[j]].T, self.W[:,self.class_ids[j]])
+                    self.H_r[self.class_ids[j],:] = self.transform(U_r[j], WtW = WtW, WtU = np.dot(self.W[:,self.class_ids[j]].T, U_r[j])) 
+                    self.H_z[self.class_ids[j],:] = self.transform(U_z[j], WtW = WtW, WtU = np.dot(self.W[:,self.class_ids[j]].T, U_z[j])) 
+            elif prob == "semi" or prob == "semi_adv":
+                self.H_r = self.transform(V)
+                if prob == "semi_adv":
+                    self.H_z = np.random.uniform(0,1,(self.ds[-1],self.N_z))
             if prob == "sup" or prob == "full":
                 self.H_sup = self.transform(V_sup)
 
@@ -412,6 +513,9 @@ class NMF:
             # Shuffle data
             np.random.shuffle(ids)
 
+            if not self.update_H:
+                self.H_sup *= H_update(V_sup,self.W,self.H_sup) 
+
             # Iterate over each source
 
             for b in range(self.N_batches):
@@ -422,17 +526,13 @@ class NMF:
                     
                     U_sup_batch = U_sup[j][:,batch_ids]
                     H_sup_batch = self.H_sup[class_ids[j]][:,batch_ids]
+                    if self.update_H:
+                        V_sup_batch = V_sup[:,batch_ids]
+                        self.H_sup[:,batch_ids] *= H_update(V_sup_batch, self.W, self.H_sup[:,batch_ids])
 
                     # Update W
                     self.W[:,class_ids[j]] *= W_update(U_sup_batch, self.W[:,class_ids[j]], H_sup_batch)
                 
-                if self.update_H:
-                    V_sup_batch = V_sup[:,batch_ids]
-                    self.H_sup[:,batch_ids] *= H_update(V_sup_batch, self.W, self.H_sup[:,batch_ids])
-
-            if not self.update_H:
-                self.H_sup = self.H_sup * H_update(V_sup,self.W,self.H_sup)
-
             if self.normalize:
                 norms = np.linalg.norm(self.W, axis = 0)
                 self.W = self.W/(norms + 1e-10)
@@ -529,8 +629,16 @@ class NMF:
             np.random.shuffle(ids_z)
             np.random.shuffle(ids_sup)
 
+            # Update H_sup
+            self.H_sup *= self.H_update(np.sqrt(self.tau_S) * V_sup,self.W,self.H_sup) 
+            
             # Update W for each source
             for j in range(self.S):
+
+                # Update H_r and H_z for each class
+                WtW = np.dot(self.W[:,class_ids[j]].T, self.W[:,class_ids[j]])
+                self.H_r[class_ids[j],:] *= self.H_update(np.sqrt(1.0 - self.tau_S) * U_r[j],self.W[:,class_ids[j]],self.H_r[class_ids[j],:], WtW = WtW) 
+                self.H_z[class_ids[j],:] *= self.H_update(U_z[j], self.W[:,class_ids[j]],self.H_z[class_ids[j],:], WtW = WtW) 
 
                 # Split data into batches
                 U_r_b = np.array_split(np.sqrt(1 - self.tau_S) * U_r[j][:,ids_r], N_batches_r, axis = 1)
@@ -551,19 +659,13 @@ class NMF:
                     bot += np.dot(self.W[:,class_ids[j]], np.dot(H_sup_b[b%N_batches_sup], H_sup_b[b%N_batches_sup].T)) * inv_N_sup
 
                     # Calculate W update
-                    self.W[:,class_ids[j]] = self.W[:,class_ids[j]] * (top)/(bot + self.mu_W)
+                    self.W[:,class_ids[j]] *= (top)/(bot + self.mu_W)
+                
 
-                # Update H_r and H_z for each class
-                WtW = np.dot(self.W[:,class_ids[j]].T, self.W[:,class_ids[j]])
-                self.H_r[class_ids[j],:] = self.H_r[class_ids[j],:] * self.H_update(np.sqrt(1.0 - self.tau_S) * U_r[j],self.W[:,class_ids[j]],self.H_r[class_ids[j],:], WtW = WtW) 
-                self.H_z[class_ids[j],:] = self.H_z[class_ids[j],:] * self.H_update(U_z[j], self.W[:,class_ids[j]],self.H_z[class_ids[j],:], WtW = WtW) 
-
-            # Calculate H_sup, can reuse last calculation of WtW
-            self.H_sup = self.H_sup * self.H_update(np.sqrt(self.tau_S) * V_sup,self.W,self.H_sup, WtW = WtW) 
 
             if self.normalize:
                 norms = np.linalg.norm(self.W, axis = 0)
-                self.W = self.W/norms
+                self.W = self.W/(norms + 1e-10)
                 self.H_r = norms[:,np.newaxis] * self.H_r
                 self.H_z = norms[:,np.newaxis] * self.H_z
                 self.H_sup = norms[:,np.newaxis] * self.H_sup
@@ -577,6 +679,126 @@ class NMF:
         if conv:
             return loss_full
 
+    def fit_std_semi(self, V):
+        """
+        Semi supervised fitting. Assumes self.W is initialized already
+        """
+
+        self.M = V.shape[0]
+        self.N_r = V.shape[1]
+        self.S = len(self.ds)
+
+        # Calculate Number of Batches
+        if self.batch_size == None:
+            self.batch_size = V.shape[1]
+        if self.prob == "sup" and self.batch_size_sup is not None:
+            self.batch_size = self.batch_size_sup
+
+        self.initH(V = V, prob = "semi")
+
+        N_batches = self.N_r//self.batch_size 
+
+        # List of ids that will be shuffled
+        ids = np.arange(0,self.N_r)
+
+        # Define updates and loss func, leftover from old code
+        W_update = self.std_W_semi_update
+        H_update = self.H_semi_update
+
+        for i in range(self.epochs):
+
+            # Shuffle ids, U and H
+            np.random.shuffle(ids)
+
+            for b in range(N_batches):
+
+                batch_ids = ids[np.arange(b*self.batch_size,(b+1)*self.batch_size)%self.N_r]
+
+                for j in range(self.S):
+
+                    # Update H for each source
+                    self.H_r[self.class_ids[j],:] *= H_update(V,self.W,self.H_r, source = j)
+                
+                # Makes copies of the shuffled data
+                V_batch = V[:,batch_ids]
+                H_batch = self.H_r[:,batch_ids]
+
+                # Update W for each batch
+                self.W[:,self.class_ids[-1]] *= W_update(V_batch, self.W, H_batch)
+
+            if self.normalize:
+                norms = np.linalg.norm(self.W, axis = 0)
+                self.W = self.W/(norms + 1e-10)
+                self.H_r = norms[:,np.newaxis] * self.H_r
+
+    def fit_adv_semi(self, V, U_z):
+        """
+        Semi supervised fitting. Assumes self.W is initialized already
+        """
+
+        self.M = V.shape[0]
+        self.N_r = V.shape[1]
+        self.N_z = U_z.shape[1]
+        self.S = len(self.ds)
+
+        if self.batch_size == None:
+            self.batch_size = self.N_r
+        if self.batch_size_z == None:
+            self.batch_size_z = self.N_z
+
+        N_batches_r = self.N_r//self.batch_size
+        N_batches_z = self.N_z//self.batch_size_z  
+        
+        # Used for inner epoch loop
+        if self.true_sample == "std":
+            N_batches = N_batches_r
+        elif self.true_sample == "adv":
+            N_batches = N_batches_z
+        else:
+            N_batches = np.minimum(N_batches_r, N_batches_z)
+
+        self.initH(V = V, prob = "semi_adv")
+
+        # List of ids that will be shuffled
+        ids_r = np.arange(0,self.N_r)
+        ids_z = np.arange(0,self.N_z)
+
+        # Define updates and loss func, leftover from old code
+        W_update = self.adv_W_semi_update
+
+        for i in range(self.epochs):
+
+            # Shuffle ids, U and H
+            np.random.shuffle(ids_r)
+            np.random.shuffle(ids_z)
+
+            for b in range(N_batches):
+
+                batch_ids_r = ids_r[np.arange(b*self.batch_size,(b+1)*self.batch_size)%self.N_r]
+                batch_ids_z = ids_z[np.arange(b*self.batch_size_z,(b+1)*self.batch_size_z)%self.N_z]
+
+                for j in range(self.S):
+
+                    # Update H for each source
+                    self.H_r[self.class_ids[j],:] *= self.H_semi_update(V,self.W,self.H_r, source = j)
+                
+                self.H_z *= self.H_update(U_z,self.W[:,self.class_ids[-1]],self.H_z)
+                
+                # Makes copies of the shuffled data
+                V_batch = V[:,batch_ids_r]
+                U_z_batch = U_z[:,batch_ids_z]
+                H_r_batch = self.H_r[:,batch_ids_r]
+                H_z_batch = self.H_z[:,batch_ids_z]
+
+                # Update W for each batch
+                self.W[:,self.class_ids[-1]] *= W_update(V_batch, U_z_batch, self.W, H_r_batch, H_z_batch)
+
+            if self.normalize:
+                norms = np.linalg.norm(self.W, axis = 0)
+                self.W = self.W/(norms + 1e-10)
+                self.H_r = norms[:,np.newaxis] * self.H_r
+                self.H_z = norms[np.sum(self.ds[:-1]),np.newaxis] * self.H_z
+            
             
                 
     def transform(self, U, WtW = None, WtU = None):
@@ -612,30 +834,35 @@ class NMF_separation:
             -> Should it return a metric for each source, or should we do some sort of broadcast?
             -> This function might need to have an axis argument too
     """
-    def __init__(self, ds, NMFs = None, Ws = None, betas = None, omegas = None, wiener = True, prob = "std", eps = 1e-10, 
-        tau_A = 0.05, tau_S = 0.5, warm_start_epochs = 0, **NMF_args):
+    def __init__(self, ds, NMFs = None, Ws = None, betas = None, omegas = None, wiener = True, prob = "std", eps = 1e-10, use_adv_basis = False,
+        tau_A = 0.1, tau_S = 0.5, warm_start_epochs = 0, **NMF_args):
   
         self.ds = ds
-        self.N_sources = len(ds)
+        self.S = len(ds)
         self.prob = prob
         self.wiener = wiener
         self.betas = betas
         self.omegas = omegas
-        self.tau_A = tau_A
-        self.tau_S = tau_S 
         self.eps = eps
         self.warm_start_epochs = warm_start_epochs
-
+        self.use_adv_basis = use_adv_basis
+        
+        if isinstance(tau_A,(int,float)):
+            self.tau_A = [tau_A]*self.S
+        else:
+            self.tau_A = tau_A
+        self.tau_S = tau_S
+        
         if NMFs is None:
             self.NMFs = []
             for i,d in enumerate(ds):
-                self.NMFs.append(NMF(d, ds = ds, tau_A = tau_A, tau_S = tau_S, prob = prob,
+                self.NMFs.append(NMF(d, ds = ds, tau_A = self.tau_A[i], tau_S = tau_S, prob = prob,
                     W = Ws[i] if Ws is not None else None, **NMF_args))
                     
         else:
             self.NMFs = NMFs
         
-        self.NMF_concat = NMF(d = sum(ds), ds = ds, tau_A = tau_A, tau_S = tau_S, prob = prob, **NMF_args)
+        self.NMF_concat = NMF(d = sum(ds), ds = ds, tau_A = self.tau_A[-1], tau_S = tau_S, prob = prob, **NMF_args)
         
         if Ws is not None or NMFs is not None:
             self.to_concat()
@@ -644,28 +871,32 @@ class NMF_separation:
 
         Ws = []
 
-        for i in range(self.N_sources):
+        for i in range(self.S):
             Ws.append(self.NMFs[i].W)
         W_concat = np.concatenate(Ws, axis = 1)
         self.NMF_concat.W = W_concat
 
     def from_concat(self):
-        for i in range(self.N_sources):
+        for i in range(self.S):
             self.NMFs[i].W = self.NMF_concat.W[:,sum(self.ds[:i]):sum(self.ds[:i+1])]
 
-    def separate(self, V):
-        
-        H_concat = self.NMF_concat.transform(V)
+    def separate(self, V, current = False):
 
-        self.Us = np.zeros((V.shape[0], self.N_sources, V.shape[1]))
+        if current:
+            H_concat = self.NMF_concat.H_r
+        else:  
+            H_concat = self.NMF_concat.transform(V)
 
-        for i in range(self.N_sources):
+        # Pixel, source, data
+        self.Us = np.zeros((V.shape[0], self.S, V.shape[1]))
+
+        for i in range(self.S):
             H = H_concat[sum(self.ds[:i]):sum(self.ds[:i+1])]
             self.Us[:,i,:] = np.dot(self.NMFs[i].W, H)
         
         if self.wiener == True:
             U_sum = np.sum(self.Us, axis = 1) + self.eps
-            for i in range(self.N_sources):
+            for i in range(self.S):
                 self.Us[:,i,:] = V * self.Us[:,i,:]/U_sum
         return self.Us
     
@@ -678,33 +909,55 @@ class NMF_separation:
         """
 
         if self.prob == "std":
-            assert U_r is not None, "Standard fitting requires U_r, but U_r is None"
 
             for i,nmf in enumerate(self.NMFs):
-                nmf.fit_std(U_r[i])
+                if U_sup is not None and U_r is not None:
+                    nmf.fit_std(np.concatenate((U_r[i], U_sup[i]), axis = -1))
+                else:
+                    nmf.fit_std(U_r[i])
             self.to_concat()
         
         elif self.prob == "adv":
 
-            assert U_r is not None, "Adverserial fitting requires U_r, but U_r is None"
-            
-            U_z = self.create_adversarial(U_r, V = V)
+            if U_sup is not None and V_sup is not None and U_r is not None:
+                U_ = np.concatenate((U_r,U_sup), axis = -1)
+                V_ = np.concatenate((V, V_sup), axis = -1)
+            else:
+                U_ = U_r
+                V_ = V
 
-            for i,nmf in enumerate(self.NMFs):
-                if self.warm_start_epochs > 0:
-                    nmf.prob = "std"
-                    nmf.epochs = self.warm_start_epochs
-                    nmf.fit_std(U_r[i])
-                    nmf.epochs = self.epochs
-                    nmf.prob = "adv"
-                nmf.fit_adv(U_r[i], U_z[i])
+            if not self.use_adv_basis:
+                U_z = self.create_adversarial(U_, V = V_)
+                for i,nmf in enumerate(self.NMFs):
+                    if self.warm_start_epochs > 0:
+                        nmf.prob = "std"
+                        nmf.epochs = self.warm_start_epochs
+                        nmf.fit_std(U_[i])
+                        nmf.epochs = self.epochs
+                        nmf.prob = "adv"
+                    nmf.fit_adv(U_[i], U_z[i])
+            else:
+                W_adv_list = []
+                for i,nmf in enumerate(self.NMFs):
+                    W_adv = []
+                    for j in range(self.S):
+                        if j == i:
+                            continue
+                        W_adv.append(self.NMFs[j].W)
+                    W_adv_list.append(np.concatenate(W_adv, axis = 1))
+                for i,nmf in enumerate(self.NMFs):
+                    nmf.fit_adv(U_r[i], np.sqrt(self.tau_A) * W_adv_list[i])
+
             self.to_concat()
+
         
         elif self.prob == "exem":
-            assert U_r is not None or U_sup is not None, "Exemplar-based fitting requires U_r or U_sup, but both are None"
 
             for i,nmf in enumerate(self.NMFs): 
-                nmf.fit_exem(U_r[i] if U_r is not None else U_sup[i])
+                if U_sup is not None:
+                    nmf.fit_exem(np.concatenate((U_r[i], U_sup[i]), axis = -1))
+                else:
+                    nmf.fit_exem(U_r[i])
             self.to_concat()
 
         elif self.prob == "sup":
@@ -738,8 +991,39 @@ class NMF_separation:
                 self.to_concat()
             self.NMF_concat.fit_full(U_r, U_z, U_sup, V_sup)
             self.from_concat()
+        
+        elif self.prob == "semi":
+            for i,nmf in enumerate(self.NMFs):
+                if i < len(self.ds) - 1:
+                    nmf.prob = "std"
+                    nmf.fit_std(U_r[i])
+                else:
+                    nmf.init = "rand"
+                    nmf.M = V.shape[0]
+                    nmf.N_r = V.shape[1]
+                    nmf.initW()
+                    nmf.initH()
+            self.to_concat() 
+            self.NMF_concat.fit_std_semi(V = V)
+            self.from_concat()
+        
+        elif self.prob == "semi_adv":
+            U_z = self.create_adversarial(U_r, V = V)
+            for i,nmf in enumerate(self.NMFs):
+                if i < len(self.ds) - 1:
+                    nmf.prob = "adv"
+                    nmf.fit_adv(U_r[i], U_z[i])
+                else:
+                    nmf.init = "rand"
+                    nmf.M = V.shape[0]
+                    nmf.N_r = V.shape[1]
+                    nmf.initW()
+                    nmf.initH()
+            self.to_concat() 
+            self.NMF_concat.fit_adv_semi(V = V, U_z = U_z[-1])
+            self.from_concat()
     
-    def eval(self, U_test, V_test, metric = 'norm', aggregate = "mean", axis = 0):
+    def eval(self, U_test, V_test, metric = 'norm', aggregate = "mean", weights = None, current = False, axis = 0):
         """
         Tests a fitted method on the test data. Note here that U_test is on a different form compared to 
 
@@ -755,7 +1039,11 @@ class NMF_separation:
                 - 'median'
             axis:, 
         """
-        out = self.separate(V = V_test)
+        out = self.separate(V = V_test, current = current)
+
+        if aggregate == "average" and weights is None:
+            weights = [1.0/len(U_test)]*len(U_test)
+
         if metric == 'norm':
             result = np.linalg.norm(out - U_test, axis = 0)**2
         elif metric == 'psnr':
@@ -765,10 +1053,12 @@ class NMF_separation:
             return result
         elif aggregate == "mean":
             return np.mean(result, axis = axis)
+        elif aggregate == "average":
+            return np.average(result, weights = weights, axis = axis)
         elif aggregate == "median":
             return np.median(result, axis = axis)
 
-    def create_adversarial(self,U_r, V = None):
+    def create_adversarial(self, U_r, V = None):
         """
         Generates adversarial dataset that potentially contains both mixed data and data from other sources
         U_{Z_i} = tau_i * [sqrt(omega_i1 N_z/N_1)U_1 ... sqrt((1- sum_{j \neq i} omega_{ij}) N_z/N_V ) beta_i V]
@@ -818,10 +1108,12 @@ class NMF_separation:
             if useMixed:
                 U_r_.append(np.sqrt((1.0 - np.sum(self.omegas[i])) * N_Zs[i]/V.shape[1]) * self.betas[i] * V)
 
-            if self.prob == "adv":
-                U_Z.append(np.copy(np.sqrt(self.tau_A) * np.concatenate(U_r_, axis = 1)))
+            if self.prob == "adv" or self.prob == "semi_adv":
+                U_Z.append(np.copy(np.sqrt(self.tau_A[i]) * np.concatenate(U_r_, axis = 1)))
+
             elif self.prob == "full":
-                U_Z.append(np.copy(np.sqrt((1.0 - self.tau_S) * self.tau_A) * np.concatenate(U_r_, axis = 1)))
+                U_Z.append(np.copy(np.sqrt((1.0 - self.tau_S) * self.tau_A[i]) * np.concatenate(U_r_, axis = 1)))
+
         return U_Z
 
 class random_search:
@@ -860,7 +1152,7 @@ class random_search:
         self.best_param = None
         self.best_val = - np.inf
 
-    def fit(self, U_r = None, V = None, U_sup = None, V_sup = None):
+    def fit(self, U_r = None, V = None, U_sup = None, V_sup = None, refit = False):
         """
         Fits
         """
@@ -939,7 +1231,12 @@ class random_search:
             if ex_val > self.best_val:
                 self.best_val = ex_val
                 self.best_param = params
-                self.best_model = deepcopy(sep)
+                if not refit:
+                    self.best_model = deepcopy(sep)
+        if refit:
+            self.best_model = self.method(**self.best_param)
+            self.best_model.fit(U_r = U_r, V = V, U_sup = U_sup, V_sup = V_sup)
+
         if self.verbose:
             print("Best param", self.best_param, self.best_val)
         return results
