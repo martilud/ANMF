@@ -1,6 +1,8 @@
 import numpy as np
 from utils import *
 from copy import deepcopy
+from librosa import stft, istft
+from museval.metrics import bss_eval
 
 class NMF:
 
@@ -18,13 +20,7 @@ class NMF:
         Class has several fit functions for different variants of NMF.
 
         TODO:
-        - Write code for full NMF
-        - Implement argument for which dataset to oversample/undersample before full NMF
-            -> Do this with one argument "true_sample" which decides which dataset we will sample fully, that is, how many batches we go through
-            -> For all other datasets, evaluate the i%N_batches(for that class) batch, so that we undersample and oversample automatically
-        - Remove everything that is not squared 
         - Write proper docstrings
-        - Write proper convergence
         - Make class_ids part of the object, not local to each function
         
         input:
@@ -185,7 +181,7 @@ class NMF:
 
         if self.normalize == True:
             norms = np.linalg.norm(self.W, axis = 0)
-            self.W = self.W/norms
+            self.W = self.W/(norms + 1e-10)
 
         if self.init == "rand":
             if prob != "sup":
@@ -230,7 +226,7 @@ class NMF:
 
         if self.normalize == True:
             norms = np.linalg.norm(self.W, axis = 0)
-            self.W = self.W/norms
+            self.W = self.W/(norms + 1e-10)
     
     def initH(self,U_r = None, U_z = None, V = None, U_sup = None, V_sup = None, prob = "std"):
         """
@@ -553,7 +549,7 @@ class NMF:
         self.N_r = U_r.shape[1]
 
         # Fitting of exemplar-based NMF is handled by the initialization function
-        self.initializeWH(U_r = U_r)
+        self.initW(U_r = U_r)
 
     
     def fit_full(self, U_r, U_z, U_sup, V_sup, conv = False):
@@ -709,22 +705,23 @@ class NMF:
 
             # Shuffle ids, U and H
             np.random.shuffle(ids)
+            for j in range(self.S):
+                # Update H for each source
+                self.H_r[self.class_ids[j],:] *= H_update(V,self.W,self.H_r, source = j)
 
+            # Update W for each batch
             for b in range(N_batches):
 
                 batch_ids = ids[np.arange(b*self.batch_size,(b+1)*self.batch_size)%self.N_r]
 
                 for j in range(self.S):
-
-                    # Update H for each source
-                    self.H_r[self.class_ids[j],:] *= H_update(V,self.W,self.H_r, source = j)
                 
-                # Makes copies of the shuffled data
-                V_batch = V[:,batch_ids]
-                H_batch = self.H_r[:,batch_ids]
+                    # Makes copies of the shuffled data
+                    V_batch = V[:,batch_ids]
+                    H_batch = self.H_r[:,batch_ids]
 
-                # Update W for each batch
-                self.W[:,self.class_ids[-1]] *= W_update(V_batch, self.W, H_batch)
+                    # Update W for each batch
+                    self.W[:,self.class_ids[-1]] *= W_update(V_batch, self.W, H_batch)
 
             if self.normalize:
                 norms = np.linalg.norm(self.W, axis = 0)
@@ -801,10 +798,12 @@ class NMF:
             
             
                 
-    def transform(self, U, WtW = None, WtU = None):
+    def transform(self, U, current = False, WtW = None, WtU = None):
         """
         
         """ 
+        if current:
+            return self.H_r
         if WtW is None:
             WtW = np.dot(self.W.T, self.W)
         if WtU is None:
@@ -920,8 +919,10 @@ class NMF_separation:
         elif self.prob == "adv":
 
             if U_sup is not None and V_sup is not None and U_r is not None:
-                U_ = np.concatenate((U_r,U_sup), axis = -1)
                 V_ = np.concatenate((V, V_sup), axis = -1)
+                U_ = []
+                for i in range(self.S):
+                    U_.append(np.concatenate((U_r[i],U_sup[i]), axis = -1))
             else:
                 U_ = U_r
                 V_ = V
@@ -998,11 +999,11 @@ class NMF_separation:
                     nmf.prob = "std"
                     nmf.fit_std(U_r[i])
                 else:
-                    nmf.init = "rand"
                     nmf.M = V.shape[0]
                     nmf.N_r = V.shape[1]
-                    nmf.initW()
-                    nmf.initH()
+                    if nmf.W is None:
+                        nmf.init = "rand"
+                        nmf.initW()
             self.to_concat() 
             self.NMF_concat.fit_std_semi(V = V)
             self.from_concat()
@@ -1014,14 +1015,30 @@ class NMF_separation:
                     nmf.prob = "adv"
                     nmf.fit_adv(U_r[i], U_z[i])
                 else:
+                    nmf.M = V.shape[0]
+                    nmf.N_r = V.shape[1]
+                    if nmf.W is None:
+                        nmf.init = "rand"
+                        nmf.initW()
+            self.to_concat() 
+            #self.NMF_concat.fit_adv_semi(V = V, U_z = U_z[-1])
+            self.NMF_concat.fit_std_semi(V = V)
+            self.from_concat()
+
+        elif self.prob == "semi_exem":
+            for i,nmf in enumerate(self.NMFs):
+                if i < len(self.ds) - 1:
+                    nmf.prob = "exem"
+                    nmf.fit_exem(U_r[i])
+                else:
                     nmf.init = "rand"
                     nmf.M = V.shape[0]
                     nmf.N_r = V.shape[1]
                     nmf.initW()
                     nmf.initH()
             self.to_concat() 
-            self.NMF_concat.fit_adv_semi(V = V, U_z = U_z[-1])
-            self.from_concat()
+            self.NMF_concat.fit_std_semi(V = V)
+            self.from_concat() 
     
     def eval(self, U_test, V_test, metric = 'norm', aggregate = "mean", weights = None, current = False, axis = 0):
         """
@@ -1116,6 +1133,74 @@ class NMF_separation:
 
         return U_Z
 
+class audio_separation:
+    """
+    Wrapper class for NMF_separation for audio applciations.
+    Main part is applying STFT and STFT,
+    as well as evaluating SNR and SDR
+    """
+
+    def __init__(self,prob = "semi", project = False, n_fft = 512, hop_length = None, win_length = None, **sep_args):
+        self.prob = prob
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.win_length = win_length
+        self.project = project
+
+        self.sep = NMF_separation(prob = self.prob, **sep_args)
+
+    def fit(self, u, v = None):
+        """
+        currently only really works for semi and semi_adv
+
+        U: list of list of numpy arrays
+        V: list
+        """
+
+        U_speech = []
+        Z_speech = []
+        for i in range(len(u)):
+            Z_speech.append(stft(u[i],n_fft=self.n_fft, hop_length = self.hop_length, win_length = self.win_length))
+            U_speech.append(np.abs(Z_speech[i]))
+        U_speech_concat = np.concatenate(U_speech, axis = -1)
+
+        V = []
+        Z_mix =  []
+        for i in range(len(v)):
+            Z_mix.append(stft(v[i],n_fft=self.n_fft, hop_length = self.hop_length, win_length = self.win_length))
+            V.append(np.abs(Z_mix[i]))
+        V_concat = np.concatenate(V, axis = -1)
+
+        self.sep.fit(U_r = [U_speech_concat], V = V_concat)
+
+
+    def separate(self, v = None):
+        
+        out = []
+        for i in range(len(v)):
+            Z = stft(v[i],n_fft=self.n_fft, hop_length = self.hop_length, win_length = self.win_length)
+            if self.project:
+                U_reconst = np.dot(self.sep.NMFs[0].W, self.sep.NMFs[0].transform(np.abs(Z)))     
+            else:
+                U_reconst = self.sep.separate(np.abs(Z))[:,0,:]
+            out.append(istft(U_reconst * np.exp(1j * np.angle(Z)), n_fft = self.n_fft, length = len(v[i])))
+
+        return out
+
+    def eval(self, u, v, metric = 'SNR', out = None, aggregate = None):
+        
+        assert len(u) == len(v)
+        
+        if out is None:
+            out = self.separate(v)
+
+        if metric == 'SNR':
+            return np.mean([calculate_snr(u[i], out[i]) for i in range(len(v))])
+        elif metric == 'SDR':
+            #return np.nanmean(np.concatenate([bss_eval(u[i], out[i], window = self.sdr_window, hop = self.sdr_window)[0] for i in range(len(u))], axis = -1))
+            return np.mean([calculate_sdr(u[i], out[i]) for i in range(len(u))])
+
+
 class random_search:
     """
     Does random search over parameters to try to find optimal solution
@@ -1156,7 +1241,6 @@ class random_search:
         """
         Fits
         """
-
         if self.cv > 1:
             # Get the number of samples along the second axis
             n = V_sup.shape[1]

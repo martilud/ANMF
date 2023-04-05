@@ -1,10 +1,9 @@
-import keras
-import tensorflow as tf
-import torch
-from torch import nn
-from torch.autograd import Variable
+
 import numpy as np
 import scipy as sp
+from utils import *
+import os
+import librosa
 
 class MNIST:
     def __init__(self,N_train = 5000, N_test = 1313, batch_size = 32, dataset = "mnist"):
@@ -17,6 +16,9 @@ class MNIST:
             x_train, (5000,10,28,28) array. 5000 training samples from the 10 different classes of 28 times 28 images
             x_test, (800,10,28,28) array. 800 test samples from the 10 different classes of 28 times 28 images
         """
+        import keras
+        import tensorflow as tf
+        import torch
         self.dataset = dataset
         self.batch_size = batch_size
         self.N_train = N_train
@@ -68,46 +70,6 @@ class MNIST:
             self.x_train[:,i,:,:] = x_[np.where(y_ == i)][:N_train,:,:] 
             self.x_test[:,i,:,:] = x_[np.where(y_ == i)][N_train:(N_train + N_test),:,:]
 
-    def generate_linear(self,Ms,alpha = 1.0,N_lin = 5000,N_lin_test= 800,seed = 0):
-        """
-        OUTDATED functionality is foundin generate_supervised
-        """
-        np.random.seed(seed)
-        self.x_train_lin = self.x_train.reshape((self.N_train, self.M,28*28))
-        self.x_test_lin = self.x_test.reshape((self.N_test, self.M,28*28))
-
-        self.M_lin = len(Ms)
-        self.N_lin = N_lin
-        self.N_lin_test = N_lin_test
-
-        # Arrays that will store the datasets
-        self.x_lin_train = np.zeros((self.N_lin, 28*28), dtype = 'float32') # Mixed data
-        self.y_lin_train = np.zeros((self.N_lin, self.M_lin, 28*28), dtype = 'float32') # Unmixed data
-        self.x_lin_test = np.zeros((self.N_lin_test, 28*28), dtype = 'float32') # Mixed data
-        self.y_lin_test = np.zeros((self.N_lin_test, self.M_lin, 28*28), dtype = 'float32') # Unmixed data
-
-        # Weights, will be rescaled to sum to 1
-        self.c_lin = np.random.dirichlet([alpha] * self.M_lin, (self.N_lin))
-        self.c_lin = self.c_lin.astype('float32')
-        self.c_lin_test = np.random.dirichlet([alpha] * self.M_lin, (self.N_lin_test))
-        self.c_lin_test = self.c_lin_test.astype('float32')
-
-        # Indexes to sample, want to use same samples multiple times
-        ids = np.random.choice(self.N_lin - 1,(self.N_lin,self.M_lin), replace = True)
-        ids_test = np.random.choice(self.N_lin_test - 1,(self.N_lin_test,self.M_lin), replace = True)
-
-        # Create datasets
-        for i in range(self.N_lin):
-            for j,m in enumerate(Ms):
-                self.y_lin_train[i,j,:] = np.multiply(self.c_lin[i,j], self.x_train_lin[ids[i,j],m,:])
-                self.x_lin_train[i,:] += np.multiply(self.c_lin[i,j], self.x_train_lin[ids[i,j],m,:]) 
-
-        for i in range(self.N_lin_test):
-            for j,m in enumerate(Ms):
-                self.y_lin_test[i,j,:] = np.multiply(self.c_lin_test[i,j], self.x_test_lin[ids_test[i,j], m, :])
-                self.x_lin_test[i,:] += np.multiply(self.c_lin_test[i,j], self.x_test_lin[ids_test[i,j],m,:])
-        
-
     def generate_adverserial(self,Ms, type = "deterministic", Ns = None, N_V = 100, weights = None, pytorch = False, seed = None):
         """
         Generates "synthetic supervised" adverserial dataset, which consists a list
@@ -130,8 +92,6 @@ class MNIST:
         """
         if seed is not None:
             np.random.seed(seed)
-
-        
 
         #Sources
         self.M_adv = len(Ms)
@@ -234,3 +194,104 @@ class MNIST:
             self.sup_loader = torch.utils.data.DataLoader(dataset = data, batch_size = self.batch_size, shuffle = True, drop_last = True)
             data_test = torch.utils.data.TensorDataset(torch.Tensor(self.x_sup_test), torch.Tensor(self.y_sup_test))
             self.sup_loader_test = torch.utils.data.DataLoader(dataset = data_test, batch_size = self.batch_size, shuffle = True, drop_last = True)
+
+class audio:
+    def __init__(self, ids):
+
+        if ids == None:
+            ids = ["1673"]
+        
+        directory = "Audio"
+
+        # Loop through all files in the directory and its subdirectories
+        n = 0
+        self.speech = []
+
+        total_seconds = 0
+        for root, directories, files in os.walk(directory):
+            for file in files:
+                # Check if the file extension is .flac
+                if file.endswith(".flac") and set(file.split('-')) & set(ids):
+                    # Use soundfile to read the audio data
+                    file_path = os.path.join(root, file)
+                    audio, samplerate = librosa.load(file_path, sr = 16000)
+                    self.speech.append(audio / np.max(np.abs(audio)))
+                    total_seconds += len(audio)/samplerate
+
+        directory = "wham_noise/tt"
+
+        # Loop through all files in the directory and its subdirectories
+        self.noise = []
+        i = 0
+        number_of_data = 1000
+        total_seconds = 0
+        for root, directories, files in os.walk(directory):
+            for file in files:
+                # Check if the file extension is .wav
+                if file.endswith(".wav"):
+                    # Use soundfile to read the audio data
+                    file_path = os.path.join(root, file)
+                    audio, samplerate = librosa.load(file_path, sr = 16000)
+                    self.noise.append(audio / np.max(np.abs(audio)))
+                    total_seconds += len(audio)/samplerate
+                    i+=1
+                if i == number_of_data:
+                    break
+            if i == number_of_data:
+                    break
+        
+    def generate(self, snr, seed = None):
+        
+        if seed is not None:
+            np.random.seed(seed)
+
+        snr = snr
+        snr_linear = 10**(snr/10)
+
+        N_train = len(self.speech)//2
+        N_test = len(self.speech)//2
+
+        speech_ = np.random.permutation(self.speech)
+        noise_ = np.random.permutation(self.noise)
+
+        self.speech_train = []
+
+        for i in range(N_train):
+            self.speech_train.append(speech_[i])
+
+        self.noisy_test = []
+        self.speech_test = []
+        self.noise_test = []
+
+        As = []
+        a_temp = [0.0,0.0]
+
+        i = 0
+        for i in range(N_train, N_test + N_train):
+            candidates = [b for b in noise_ if len(b) >= len(speech_[i])]
+            if candidates:
+                try:
+                    n = np.random.choice(candidates)
+                except:
+                    n = candidates
+                start = np.random.randint(0, len(n) - len(speech_[i]))
+                end = start + len(speech_[i])
+
+                p_clean = calculate_power(speech_[i])
+                p_noise = calculate_power(n[start:end])
+
+                a_temp[0] = 1.0
+                a_temp[1] = np.sqrt(p_clean/(p_noise * snr_linear))
+
+                a = [a_temp[0]/np.sum(a_temp), a_temp[1]/np.sum(a_temp)]
+                #a = [a_temp[0], a_temp[1]]
+
+                As.append(a)
+
+                self.noisy_test.append(a[0] * speech_[i] + a[1] * n[start:end])
+                self.speech_test.append(a[0] * speech_[i])
+                self.noise_test.append(a[1] * n[start:end])
+            else: 
+                continue
+
+        return np.sqrt(np.mean(np.square(np.array(As)[:,0]/np.sum(np.square(np.array(As)),axis = 1))))

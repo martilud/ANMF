@@ -68,3 +68,42 @@ def PSNR(img1, img2):
     #    return 100
     PIXEL_MAX = np.max(img1, axis = 0)
     return 20 * np.log10(PIXEL_MAX / np.sqrt(mse))
+
+def calculate_snr(clean_signal, noisy_signal):
+    """
+    Calculates the Signal-to-Noise Ratio (SNR) between a clean and noisy signal.
+
+    Args:
+        clean_signal (np.ndarray): 1D array representing the clean signal
+        noisy_signal (np.ndarray): 1D array representing the noisy signal
+
+    Returns:
+        float: The SNR in decibels (dB)
+    """
+    # Ensure that both signals are of the same length
+    assert len(clean_signal) == len(noisy_signal), "Clean and noisy signals should have the same length."
+
+    # Compute the power of the clean signal
+    clean_power = np.sum(np.square(clean_signal))
+
+    # Compute the power of the noise signal
+    noise = clean_signal - noisy_signal
+    noise_power = np.sum(np.square(noise))
+
+    # Compute the SNR in dB
+    snr_db = 10 * np.log10(clean_power / noise_power)
+
+    return snr_db
+
+def calculate_power(signal):
+    return np.sum(np.square(signal))
+
+def calculate_sdr(clean_signal, noisy_signal):
+
+    assert len(clean_signal) == len(noisy_signal)
+
+    scaling_factor = np.dot(noisy_signal, clean_signal) / np.linalg.norm(clean_signal)**2
+
+    return 10 * np.log10( np.linalg.norm(scaling_factor * clean_signal)**2 /np.linalg.norm(scaling_factor * clean_signal - noisy_signal)**2  )
+
+    
