@@ -1,4 +1,6 @@
-# Adversarially Generated NMF for single channel source separation
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+
+# Adversarially Generated NMF for Single Channel Source Separation
 
 This GitHub repository contains code related to the paper "Adversarially Generated NMF for Single Channel Source Separation" written by Martin Ludvigsen and Markus Grasmair. The paper proposes a new approach to training NMF for single channel source separation (SCSS), using ideas from recent work on adversarial regularization functions. The code in this repository implements the proposed approach and can be used to reproduce the results presented in the paper, as well as to explore variations of the method and apply it to other datasets.
 
@@ -22,11 +24,13 @@ a novel approach called Adversarially generated NMF (ANMF).
 
 ANMF is fitted by solving
 
-\[ \min_{W \ge 0} \frac{1}{N} \|U - WH(U,W)\|_F^2 - \frac{\tau_A}{\hat{N}}  \|\hat{U} - WH(\hat{U},W)\|_F^2, \]
-where
-\[ H(U,W) = \arg \min_{H \ge 0} \|U - WH\|_F^2.\]
+$$ \min_{W \ge 0} \frac{1}{N} \|U - WH(U,W)\|_F^2 - \frac{\tau_A}{\hat{N}}  \|\hat{U} - WH(\hat{U},W)\|_F^2, $$
 
-The parameter $\tau_A$ is 
+where
+
+$$ H(U,W) = \arg \min_{H \ge 0} \|U - WH\|_F^2.$$
+
+The parameter $\tau_A$ is the so-called adversarial weight
 
 ## Usage
 The interface and usage is relatively similar to the scikit learn implementation of NMF and similar methods.
