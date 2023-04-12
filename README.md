@@ -1,6 +1,3 @@
-<!-- Include MathJax library -->
-<script type="text/javascript" async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.2/MathJax.js?config=TeX-MML-AM_CHTML"></script>
-
 # Adversarially Generated NMF for Single Channel Source Separation
 
 This GitHub repository contains code related to the paper "Adversarially Generated NMF for Single Channel Source Separation" written by Martin Ludvigsen and Markus Grasmair. The paper proposes a new approach to training NMF for single channel source separation (SCSS), using ideas from recent work on adversarial regularization functions. The code in this repository implements the proposed approach and can be used to reproduce the results presented in the paper, as well as to explore variations of the method and apply it to other datasets.
@@ -34,7 +31,9 @@ where
 
 $$ H(U,W) = \arg \min_{H \ge 0} \lVert U - WH\rVert_F^2.$$
 
-The parameter $\tau_A$ is the so-called adversarial weight.
+The parameter $\tau_A \ge 0$ is the so-called adversarial weight, representing how concerned we are with fitting true data versus not fitting adversarial data. Small values yield good fits for true data. In particular, $\tau_A = 0$ is just standard NMF. Large values yield worse fits for adversarial data.
+
+The main application of this method is for single channel source separation problems, but can be applied to any inverse problem where the true signals can be reasonably represented with non-negative bases.
 
 ## Usage
 The interface and usage is relatively similar to the scikit learn implementation of NMF and similar methods.
@@ -44,10 +43,8 @@ There are two main classes:
 - ```NMF```, which is an object that handles fitting of NMF bases for a single source.
 - ```NMF_separation```, which is an object that handles fitting and separation for a specific source separation problem using NMF.
 
+For example, to fit a standard NMF with data stored column-wise in $U$
 
-
-
-For example, to fit a standard NMF with data stored column-wise in ```U```
 ```python
 d = 32 # Number of basis vectors
 
@@ -66,11 +63,10 @@ H = nmf.H_r
 U_reconstructed = np.dot(W, H)
 ```
 
-We can alternatively recalculate H via transformation:
+We can alternatively recalculate $H$ via transformation:
 ```
 H = nmf.transform(U)
 ```
-
 
 ## Results
 
