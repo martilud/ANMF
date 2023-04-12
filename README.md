@@ -14,16 +14,15 @@ The datasets used in numerical experiments can be obtained as follows:
 - The LibriSpeech dataset can be obtained here: https://www.openslr.org/12. We only use the dev-clean part of the dataset.
 - The WHAM! dataset can be obtained here: https://wham.whisper.ai/.
 
-## Non-negative Matrix factorization and its extenstions.
+## Non-negative Matrix factorization.
 
 The main goal is to find non-negative bases $W \in \mathbb{R}_+^{m \times d}$ that are trained to represent true data $U \in \mathbb{R}_+^{m \times N}$ and adversarial data $\hat{U} \in \mathbb{R}_+^{m \times \hat{N}}$ poorly.
 
-In other words, we want $U \approx WH$, with $H \in \mathbb{R}_+^{d \times N}$ and $\hat{U} \neq W\hat{H}$, with $\hat{H} \in \mathbb{R}_+^{m \times \hat{N}}$. This first property is usually what is called Non-negative Matrix Factorization (NMF), and the second property is
-a novel approach called Adversarially generated NMF (ANMF).
+In other words, we want $U \approx WH$, with $H \in \mathbb{R}_+^{d \times N}$ and $\hat{U} \neq W\hat{H}$, with $\hat{H} \in \mathbb{R}_+^{m \times \hat{N}}$. A basis satisfying the first property is usually what is called Non-negative Matrix Factorization (NMF), and a basis satisfying the second property is a novel approach called Adversarially Generated NMF (ANMF).
 
 ANMF is fitted by solving
 
-$$ \min_{W \ge 0} \frac{1}{N} \|U - WH(U,W)\|_F^2 - \frac{\tau_A}{\hat{N}}  \|\hat{U} - WH(\hat{U},W)\|_F^2, $$
+$$ \min_{W \ge 0} \frac{1}{N} \lVert U - WH(U,W)\rVert_F^2 - \frac{\tau_A}{\hat{N}}  \lVert\hat{U} - WH(\hat{U},W)\rVert_F^2, $$
 
 where
 
