@@ -22,13 +22,13 @@ In other words, we want $U \approx WH$, with $H \in \mathbb{R}_+^{d \times N}$ a
 
 ANMF is fitted by solving
 
-$$ \min_{W \ge 0} \frac{1}{N} \lVert U - WH(U,W)\rVert_F^2 - \frac{\tau_A}{\hat{N}}  \lVert\hat{U} - WH(\hat{U},W)\rVert_F^2, $$
+$$ \min_{W \ge 0} \frac{1}{N} \|U - WH(U,W)\|_F^2 - \frac{\tau_A}{\hat{N}}  \|\hat{U} - WH(\hat{U},W)\|_F^2, $$
 
 where
 
 $$ H(U,W) = \arg \min_{H \ge 0} \|U - WH\|_F^2.$$
 
-The parameter $\tau_A$ is the so-called adversarial weight
+The parameter $\tau_A$ is the so-called adversarial weight.
 
 ## Usage
 The interface and usage is relatively similar to the scikit learn implementation of NMF and similar methods.
