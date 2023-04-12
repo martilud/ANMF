@@ -18,17 +18,21 @@ The datasets used in numerical experiments can be obtained as follows:
 
 ## Non-negative Matrix factorization.
 
-The main goal is to find non-negative bases $W \in \mathbb{R}_{+}^{m \times d}$ that are trained to represent true data $U \in \mathbb{R}_{+}^{m \times N}$ and adversarial data $\hat{U} \in \mathbb{R}_{+}^{m \times \hat{N}}$ poorly.
+The main goal is to find non-negative $m \times d$ matrix $W$ that can represent true data $U$ well and adversarial data $\hat{U} poorly.
 
-In other words, we want $U \approx WH$, with $H \in \mathbb{R}_+^{d \times N}$ and $\hat{U} \neq W\hat{H}$, with $\hat{H} \in \mathbb{R}_+^{m \times \hat{N}}$. A basis satisfying the first property is usually what is called Non-negative Matrix Factorization (NMF), and a basis satisfying the second property is a novel approach called Adversarially Generated NMF (ANMF).
+In other words, we want $U \approx WH$ and $\hat{U} \neq W\hat{H}$, where:
+- $U$ is a $m \times N$ matrix containing the true data stored column-wise.
+- $\hat{U}$ is a $m \times \hat{N}$ matrix containing the adversarial data stored column-wise.
+- $H$ is a $d \times N$ matrix containing the true weights.
+- $\hat{H}$ is a $d \times \hat{N}$ matrix containing the adversarial weights.
 
 ANMF is fitted by solving
 
-$$ \min_{W \ge 0} \frac{1}{N} \|U - WH(U,W)\|_F^2 - \frac{\tau_A}{\hat{N}}  \|\hat{U} - WH(\hat{U},W)\|_F^2, $$
+$$ \min_{W \ge 0} \frac{1}{N} \lVert U - WH(U,W)\rVert_F^2 - \frac{\tau_A}{\hat{N}}  \lVert\hat{U} - WH(\hat{U},W)\rVert_F^2, $$
 
 where
 
-$$ H(U,W) = \arg \min_{H \ge 0} \|U - WH\|_F^2.$$
+$$ H(U,W) = \arg \min_{H \ge 0} \lVert U - WH\rVert_F^2.$$
 
 The parameter $\tau_A$ is the so-called adversarial weight.
 
