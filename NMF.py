@@ -2,7 +2,6 @@ import numpy as np
 from utils import *
 from copy import deepcopy
 from librosa import stft, istft
-from museval.metrics import bss_eval
 
 class NMF:
 

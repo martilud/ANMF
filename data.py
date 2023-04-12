@@ -1,6 +1,5 @@
 
 import numpy as np
-import scipy as sp
 from utils import *
 import os
 import librosa
