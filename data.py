@@ -10,15 +10,13 @@ class MNIST:
         """
         Loads mnist-like datasets and creates a train and test array that is sorted based on class
 
+        Currently uses tensorflow/keras 
+
         input:
             dataset: str, "mnist" for standard MNIST, "fashion" for fashionMNIST
-        output:
-            x_train, (5000,10,28,28) array. 5000 training samples from the 10 different classes of 28 times 28 images
-            x_test, (800,10,28,28) array. 800 test samples from the 10 different classes of 28 times 28 images
         """
         import keras
         import tensorflow as tf
-        import torch
         self.dataset = dataset
         self.batch_size = batch_size
         self.N_train = N_train
@@ -70,25 +68,20 @@ class MNIST:
             self.x_train[:,i,:,:] = x_[np.where(y_ == i)][:N_train,:,:] 
             self.x_test[:,i,:,:] = x_[np.where(y_ == i)][N_train:(N_train + N_test),:,:]
 
-    def generate_adverserial(self,Ms, type = "deterministic", Ns = None, N_V = 100, weights = None, pytorch = False, seed = None):
+    def generate_adverserial(self, Ms, type = "deterministic", Ns = None, N_V = 100, weights = None, seed = None):
         """
-        Generates "synthetic supervised" adverserial dataset, which consists a list
-        of dataloaders with real data and one dataloader with synthetically generated
-        mixed data. We make sure that none of the data used in the synthetically generated
+        Generates weak supervision data.
+        We make sure that none of the data used in the synthetically generated
         data also appear in the real data.
-
-        The synthetically mixed data are mixed as
-        v = sum_i c_i u_i,
-        where c_i are uniformly distributed between some lower and upper bound and then
-        rescaled so that sum_i c_i = 1
 
         Input:
             Ms: list, contains integers between 0 and 9 which denote the different classes of 
                 MNIST data. For example, passing 'Ms = [0,1]' will create datasets using
                 class 0 and class 1.
-            
-        Output:
-            adv_loaders: list, contains the different dataloaders for each class.
+            type: string, "deterministic" for deterministic weights, "dirichlet" for dirichlet distributed weights
+            Ns: list, number of data in each source
+            N_V: int, number of mixed data
+            weights: list, deterministic weights or dirichlet weights
         """
         if seed is not None:
             np.random.seed(seed)
@@ -114,9 +107,6 @@ class MNIST:
         self.x_r_train = [] #np.zeros((self.N_adv, self.M_adv, 28, 28), dtype = 'float32')
         self.x_v_train = np.zeros((self.N_adv_V, 28, 28), dtype = 'float32')
 
-        #if pytorch:
-        #    # List to store the dataloaders (pytorch datasets)
-        #    self.adv_loaders = []
 
         # Need to create the real and adversarial dataset M times
         for k, ms in enumerate(Ms):
@@ -137,14 +127,20 @@ class MNIST:
             for j,m in enumerate(Ms):
                 self.x_v_train[i,:,:] += np.multiply(self.c_adv[i,j], self.x_train[np.max(self.Ns_adv) + idp[i,j],m,:,:])
 
-            # Create dataloader and append it to list
-            #if pytorch:
-            #    data = torch.utils.data.TensorDataset(torch.Tensor(self.x_r_train[:,k,:,:].reshape((self.N_adv,1,28,28))), torch.Tensor(self.x_p_train[:,k,:,:].reshape(self.N_adv,1,28,28)))
-            #    adv_loader = torch.utils.data.DataLoader(dataset = data, batch_size = self.batch_size, shuffle = True, drop_last = True)
-            #    self.adv_loaders.append(adv_loader)
 
-    def generate_supervised(self,Ms,type = "deterministic", weights = None,N_sup = 1000, N_sup_test = 200, pytorch = False, seed = None):
-        
+    def generate_supervised(self,Ms,type = "deterministic", weights = None,N_sup = 1000, N_sup_test = 200, seed = None):
+        """ 
+        Generates synthetic strong supervised data.
+
+        Input:
+            Ms: list, contains integers between 0 and 9 which denote the different classes of 
+                MNIST data. For example, passing 'Ms = [0,1]' will create datasets using
+                class 0 and class 1.
+            type: string, "deterministic" for deterministic weights, "dirichlet" for dirichlet distributed weights
+            N_sup: int, number of data
+            N_sup_test: int, number of test data
+            weights: list, deterministic weights or dirichlet weights
+        """ 
         if seed is not None:
             np.random.seed(seed)
 
@@ -189,13 +185,11 @@ class MNIST:
             for j,m in enumerate(Ms):
                 self.y_sup_test[i,j,:,:] = np.multiply(self.c_sup_test[i,j], self.x_test[ids_test[j,i], m, :, :])
                 self.x_sup_test[i,0,:,:] += np.multiply(self.c_sup_test[i,j], self.x_test[ids_test[j,i],m,:,:])
-        if pytorch:
-            data = torch.utils.data.TensorDataset(torch.Tensor(self.x_sup_train), torch.Tensor(self.y_sup_train))
-            self.sup_loader = torch.utils.data.DataLoader(dataset = data, batch_size = self.batch_size, shuffle = True, drop_last = True)
-            data_test = torch.utils.data.TensorDataset(torch.Tensor(self.x_sup_test), torch.Tensor(self.y_sup_test))
-            self.sup_loader_test = torch.utils.data.DataLoader(dataset = data_test, batch_size = self.batch_size, shuffle = True, drop_last = True)
 
 class audio:
+    """
+    Class for handling audio data 
+    """
     def __init__(self, ids):
 
         if ids == None:
@@ -245,17 +239,19 @@ class audio:
         if seed is not None:
             np.random.seed(seed)
 
-        snr = snr
+        # Calculate linear snr
         snr_linear = 10**(snr/10)
 
+        # Train test split
         N_train = len(self.speech)//2
         N_test = len(self.speech)//2
 
+        # Shuffle
         speech_ = np.random.permutation(self.speech)
         noise_ = np.random.permutation(self.noise)
 
+        # Create training set
         self.speech_train = []
-
         for i in range(N_train):
             self.speech_train.append(speech_[i])
 
@@ -268,6 +264,7 @@ class audio:
 
         i = 0
         for i in range(N_train, N_test + N_train):
+            # Find noise candidates
             candidates = [b for b in noise_ if len(b) >= len(speech_[i])]
             if candidates:
                 try:
@@ -276,22 +273,26 @@ class audio:
                     n = candidates
                 start = np.random.randint(0, len(n) - len(speech_[i]))
                 end = start + len(speech_[i])
-
+            
+                # Calculate power of clean speech and noise
                 p_clean = calculate_power(speech_[i])
                 p_noise = calculate_power(n[start:end])
 
+                # Calculate weight for specific snr
                 a_temp[0] = 1.0
                 a_temp[1] = np.sqrt(p_clean/(p_noise * snr_linear))
 
+                # Calculate weights so they sum to 1
                 a = [a_temp[0]/np.sum(a_temp), a_temp[1]/np.sum(a_temp)]
-                #a = [a_temp[0], a_temp[1]]
 
                 As.append(a)
 
+                # Create datasets
                 self.noisy_test.append(a[0] * speech_[i] + a[1] * n[start:end])
                 self.speech_test.append(a[0] * speech_[i])
                 self.noise_test.append(a[1] * n[start:end])
             else: 
                 continue
-
+        
+        # Return beta
         return np.sqrt(np.mean(np.square(np.array(As)[:,0]/np.sum(np.square(np.array(As)),axis = 1))))
