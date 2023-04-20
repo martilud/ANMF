@@ -1,8 +1,5 @@
-
 import numpy as np
 from utils import *
-import os
-import librosa
 
 class MNIST:
     def __init__(self,N_train = 5000, N_test = 1313, batch_size = 32, dataset = "mnist"):
@@ -190,6 +187,8 @@ class audio:
     Class for handling audio data 
     """
     def __init__(self, ids):
+        from librosa import load
+        import os
 
         if ids == None:
             ids = ["1673"]
@@ -207,7 +206,7 @@ class audio:
                 if file.endswith(".flac") and set(file.split('-')) & set(ids):
                     # Use soundfile to read the audio data
                     file_path = os.path.join(root, file)
-                    audio, samplerate = librosa.load(file_path, sr = 16000)
+                    audio, samplerate = load(file_path, sr = 16000)
                     self.speech.append(audio / np.max(np.abs(audio)))
                     total_seconds += len(audio)/samplerate
 
@@ -224,7 +223,7 @@ class audio:
                 if file.endswith(".wav"):
                     # Use soundfile to read the audio data
                     file_path = os.path.join(root, file)
-                    audio, samplerate = librosa.load(file_path, sr = 16000)
+                    audio, samplerate = load(file_path, sr = 16000)
                     self.noise.append(audio / np.max(np.abs(audio)))
                     total_seconds += len(audio)/samplerate
                     i+=1
