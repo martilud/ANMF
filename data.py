@@ -42,12 +42,6 @@ class MNIST:
         # Normalizing 
         x_/= 255
 
-        # Number of data for each of the classes. 
-        # One of the classes only has 5421 data for training and 800-something for test
-        # In order to have balanced data we discard extra data
-        #self.N_train = 5400
-        #self.N_test = 820
-
         # Number of classes
         self.M = 10
         
@@ -106,7 +100,6 @@ class MNIST:
 
         # Need to create the real and adversarial dataset M times
         for k, ms in enumerate(Ms):
-
             # Clean data
             self.x_r_train.append(self.x_train[:self.Ns_adv[k],ms,:,:])
 
@@ -151,9 +144,9 @@ class MNIST:
                 weights = [1.0] * self.M_sup
 
         # Arrays that will store the datasets
-        self.x_sup_train = np.zeros((self.N_sup, 1, 28, 28), dtype = 'float32') # Mixed data
+        self.x_sup_train = np.zeros((self.N_sup, 28, 28), dtype = 'float32') # Mixed data
         self.y_sup_train = np.zeros((self.N_sup, self.M_sup, 28, 28), dtype = 'float32') # Unmixed data
-        self.x_sup_test = np.zeros((self.N_sup_test, 1, 28, 28), dtype = 'float32') # Mixed data
+        self.x_sup_test = np.zeros((self.N_sup_test, 28, 28), dtype = 'float32') # Mixed data
         self.y_sup_test = np.zeros((self.N_sup_test, self.M_sup, 28, 28), dtype = 'float32') # Unmixed data
 
         if type == "deterministic" or type == "det":
@@ -175,12 +168,12 @@ class MNIST:
         for i in range(self.N_sup):
             for j,m in enumerate(Ms):
                 self.y_sup_train[i,j,:,:] = np.multiply(self.c_sup[i,j], self.x_train[ids[j,i], m, :, :])
-                self.x_sup_train[i,0,:,:] += np.multiply(self.c_sup[i,j], self.x_train[ids[j,i],m,:,:]) 
+                self.x_sup_train[i,:,:] += np.multiply(self.c_sup[i,j], self.x_train[ids[j,i],m,:,:]) 
 
         for i in range(self.N_sup_test):
             for j,m in enumerate(Ms):
                 self.y_sup_test[i,j,:,:] = np.multiply(self.c_sup_test[i,j], self.x_test[ids_test[j,i], m, :, :])
-                self.x_sup_test[i,0,:,:] += np.multiply(self.c_sup_test[i,j], self.x_test[ids_test[j,i],m,:,:])
+                self.x_sup_test[i,:,:] += np.multiply(self.c_sup_test[i,j], self.x_test[ids_test[j,i],m,:,:])
 
 class audio:
     """
@@ -210,12 +203,12 @@ class audio:
                     self.speech.append(audio / np.max(np.abs(audio)))
                     total_seconds += len(audio)/samplerate
 
-        directory = "wham_noise/tt"
+        directory = "musan/noise/sound-bible"
 
         # Loop through all files in the directory and its subdirectories
         self.noise = []
         i = 0
-        number_of_data = 1000
+        number_of_data = 100
         total_seconds = 0
         for root, directories, files in os.walk(directory):
             for file in files:
@@ -260,7 +253,6 @@ class audio:
         As = []
         a_temp = [0.0,0.0]
 
-        i = 0
         for i in range(N_train, N_test + N_train):
             # Find noise candidates
             candidates = [b for b in noise_ if len(b) >= len(speech_[i])]

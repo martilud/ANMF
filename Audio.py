@@ -37,18 +37,18 @@ class audio_separation:
         U_speech = []
         Z_speech = []
         for i in range(len(u)):
-            Z_speech.append(stft(u[i],n_fft=self.n_fft, hop_length = self.hop_length, win_length = self.win_length))
+            Z_speech.append(stft(u[i],n_fft=self.n_fft, hop_length = self.hop_length, win_length = self.win_length, window ='hann'))
             U_speech.append(np.abs(Z_speech[i]))
         U_speech_concat = np.concatenate(U_speech, axis = -1)
 
         V = []
         Z_mix =  []
         for i in range(len(v)):
-            Z_mix.append(stft(v[i],n_fft=self.n_fft, hop_length = self.hop_length, win_length = self.win_length))
+            Z_mix.append(stft(v[i],n_fft=self.n_fft, hop_length = self.hop_length, win_length = self.win_length, window = 'hann'))
             V.append(np.abs(Z_mix[i]))
         V_concat = np.concatenate(V, axis = -1)
 
-        self.sep.fit(U_r = [U_speech_concat], V = V_concat)
+        self.sep.fit(U = [U_speech_concat], V = V_concat)
 
 
     def separate(self, v = None):
@@ -57,12 +57,12 @@ class audio_separation:
         """ 
         out = []
         for i in range(len(v)):
-            Z = stft(v[i],n_fft=self.n_fft, hop_length = self.hop_length, win_length = self.win_length)
+            Z = stft(v[i],n_fft=self.n_fft, hop_length = self.hop_length, win_length = self.win_length, window = 'hann')
             if self.project:
                 U_reconst = np.dot(self.sep.NMFs[0].W, self.sep.NMFs[0].transform(np.abs(Z)))     
             else:
                 U_reconst = self.sep.separate(np.abs(Z))[:,0,:]
-            out.append(istft(U_reconst * np.exp(1j * np.angle(Z)), n_fft = self.n_fft, length = len(v[i])))
+            out.append(istft(U_reconst * np.exp(1j * np.angle(Z)), n_fft = self.n_fft, hop_length = self.hop_length, win_length = self.win_length, window = 'hann', length = len(v[i])))
 
         return out
 
@@ -77,8 +77,13 @@ class audio_separation:
             out = self.separate(v)
 
         if metric == 'SNR':
-            return np.mean([calculate_snr(u[i], out[i]) for i in range(len(v))])
+            if aggregate is None:
+                return np.array([calculate_snr(u[i], out[i]) for i in range(len(v))])
+            elif aggregate == "mean":
+                return np.mean([calculate_snr(u[i], out[i]) for i in range(len(v))])
         elif metric == 'SDR':
-            #return np.nanmean(np.concatenate([bss_eval(u[i], out[i], window = self.sdr_window, hop = self.sdr_window)[0] for i in range(len(u))], axis = -1))
-            return np.mean([calculate_sdr(u[i], out[i]) for i in range(len(u))])
+            if aggregate is None:
+                return np.array([calculate_sdr(u[i], out[i]) for i in range(len(u))])
+            elif aggregate == "mean":
+                return np.mean([calculate_sdr(u[i], out[i]) for i in range(len(u))])
 
